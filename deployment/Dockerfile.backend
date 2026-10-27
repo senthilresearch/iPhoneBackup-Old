@@ -1,0 +1,13 @@
+FROM python:3.13-slim
+WORKDIR /app
+COPY backend/requirements.txt backend/requirements.txt
+# pywin32 is Windows-only; pymobiledevice3 goes in with --no-deps (see README).
+RUN grep -viE '^(pywin32|pytest)' backend/requirements.txt > /tmp/req.txt \
+ && pip install --no-cache-dir -r /tmp/req.txt \
+ && pip install --no-cache-dir --no-deps pymobiledevice3
+COPY backend/app backend/app
+ENV IPHONE_LIBRARY=/library
+VOLUME /library
+EXPOSE 8765
+WORKDIR /app/backend
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8765"]

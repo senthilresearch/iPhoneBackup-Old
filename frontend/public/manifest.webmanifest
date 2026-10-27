@@ -1,0 +1,8 @@
+{
+  "name": "iPhone Backup Upload",
+  "short_name": "Backup",
+  "start_url": "/upload.html",
+  "display": "standalone",
+  "background_color": "#111317",
+  "theme_color": "#111317"
+}

@@ -1,0 +1,41 @@
+# Install on Python 3.13 (3.14 has no wheels for some native deps).
+# pymobiledevice3 itself is installed with --no-deps because lzfse/pylzss need a
+# C++ compiler and are only used for iOS backup/restore. See docs/README.md.
+fastapi
+uvicorn
+construct
+construct-typing<0.8.0,>=0.7.0
+asn1
+coloredlogs
+IPython
+bpylist2>=4.0.1
+pygments
+daemonize
+pyusb
+tqdm
+requests
+xonsh
+packaging
+typing_extensions
+pygnuutils
+cryptography
+pycrashreport
+wsproto
+Pillow
+questionary
+ifaddr
+hyperframe
+srptools
+opack2
+psutil
+prompt_toolkit
+python-pcapng
+typer<0.24
+typer-injector
+defusedxml
+pywin32; sys_platform == "win32"
+ioregistry
+pillow-heif
+httpx
+pytest
+segno

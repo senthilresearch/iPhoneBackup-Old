@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+server.log
+node_modules/
+dist/
+deploy-watch.log*
+config/settings.json
+backend/.build-venv/
+dist-app/
+build-app/
+.env
+config/mtls/
+.env.relay
+.env.relay-local
+
+# macOS / Xcode
+.DS_Store
+xcuserdata/
+config/invite-qr.svg
+config/pair-qr.svg
+
+# simulated boxes (tools/sim_boxes.py): accounts, keys, libraries, QR codes
+sim-boxes/
+backend/sim-boxes/
+
+# multi-user test environment (testenv-up.ps1): generated compose file and passwords
+.testenv/
+.playwright-mcp/

@@ -1,0 +1,31 @@
+# Public HTTPS entry for the Mac agent / future apps: only the upload API is reachable from the internet.
+# Caddy listens on 80 (redirects to HTTPS) and 443. The certificate comes from Let's Encrypt via the DuckDNS DNS
+# challenge, so it works even when the ISP/router treats 80/443 specially.
+{$PUBLIC_HOST:beammedia.duckdns.org} {
+	tls {
+		dns duckdns {env.DUCKDNS_TOKEN}
+		import {$MTLS_SNIPPET:/etc/caddy/no-mtls.conf}   # client certificates: see docker/mtls.conf
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	@allowed {
+		path /api/upload /api/upload/* /api/device
+	}
+	handle @allowed {
+		reverse_proxy backend:8765 {
+			flush_interval -1
+			transport http {
+				read_timeout 1h
+				write_timeout 1h
+			}
+		}
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

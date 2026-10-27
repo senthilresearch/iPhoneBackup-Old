@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Backup" />
+  <meta name="theme-color" content="#111317" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <title>Send to PC</title>
+  <style>
+    :root { --bg:#f4f5f7; --card:#fff; --text:#1c1e21; --muted:#6b7280; --line:#e2e5ea; --accent:#2563eb; --ok:#15803d; --err:#b91c1c; color-scheme: light dark; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#111317; --card:#1b1e24; --text:#e8eaed; --muted:#9aa3af; --line:#2b3038; --accent:#60a5fa; --ok:#4ade80; --err:#f87171; } }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.45 -apple-system, system-ui, sans-serif; padding: max(16px, env(safe-area-inset-top)) 16px 32px; }
+    main { max-width: 520px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 8px 0 16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+    label { display:block; font-size:14px; color:var(--muted); margin-bottom:4px; }
+    input[type=text] { width:100%; font:inherit; padding:10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--text); }
+    button { font:inherit; width:100%; padding:14px; border-radius:10px; border:1px solid var(--accent); background:var(--accent); color:#fff; margin-top:12px; }
+    button.secondary { background:transparent; color:var(--accent); }
+    button:disabled { opacity:.5; }
+    .bar { height:12px; background:var(--line); border-radius:6px; overflow:hidden; margin:10px 0 6px; }
+    .bar > div { height:100%; width:0; background:var(--accent); transition:width .2s; }
+    .sub { color:var(--muted); font-size:14px; }
+    .ok { color:var(--ok); } .err { color:var(--err); }
+    #log { max-height: 160px; overflow:auto; font-size:13px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Send photos to your PC</h1>
+
+  <div class="card">
+    <label for="dest">Save in folder (optional)</label>
+    <input id="dest" type="text" placeholder="e.g. Trips/Goa 2026" autocapitalize="none" />
+    <input id="pick" type="file" multiple accept="image/*,video/*" hidden />
+    <button id="choose">Choose photos &amp; videos</button>
+    <p class="sub">Safari may convert some HEIC photos to JPEG when you pick them. The USB import keeps originals.</p>
+  </div>
+
+  <div class="card" id="status" hidden>
+    <strong id="title">Uploading</strong>
+    <div class="bar"><div id="fill"></div></div>
+    <div id="line" class="sub"></div>
+    <button id="cancel" class="secondary">Cancel</button>
+    <div id="log" class="sub"></div>
+  </div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const CHUNK = 4 * 1024 * 1024;
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token") || store.get("token") || "";
+  if (params.get("token")) store.set("token", token);
+  let clientId = store.get("client_id");
+  if (!clientId) { clientId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""); store.set("client_id", clientId); }
+  $("dest").value = store.get("dest") || "";
+
+  const headers = (extra = {}) => ({ "X-Token": token, ...extra });
+  let cancelled = false;
+
+  async function call(path, opts = {}) {
+    const res = await fetch("/api/upload" + path, { ...opts, headers: headers(opts.headers) });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.detail || "HTTP " + res.status);
+    return body;
+  }
+
+  function log(msg, cls = "") {
+    const d = document.createElement("div");
+    d.textContent = msg; if (cls) d.className = cls;
+    $("log").prepend(d);
+  }
+
+  async function uploadOne(file, destination, onBytes) {
+    const init = await call("/init", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: clientId, local_id: `${file.name}|${file.size}|${file.lastModified}`,
+        name: file.name, size: file.size,
+        taken_at: new Date(file.lastModified).toISOString(), destination: destination || null,
+      }),
+    });
+    if (init.status === "exists") { onBytes(file.size); return "exists"; }
+    let offset = 0;
+    while (offset < file.size) {
+      if (cancelled) throw new Error("cancelled");
+      const end = Math.min(offset + CHUNK, file.size);
+      let attempt = 0;
+      for (;;) {
+        try {
+          await call(`/${init.upload_id}?offset=${offset}`, { method: "PUT", body: file.slice(offset, end) });
+          break;
+        } catch (e) {
+          if (++attempt >= 4 || cancelled) throw e;
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+        }
+      }
+      onBytes(end - offset);
+      offset = end;
+    }
+    return (await call(`/${init.upload_id}/complete`, { method: "POST" })).status;
+  }
+
+  $("choose").onclick = () => $("pick").click();
+  $("cancel").onclick = () => { cancelled = true; };
+
+  $("pick").onchange = async () => {
+    const files = [...$("pick").files];
+    if (!files.length) return;
+    const dest = $("dest").value.trim();
+    store.set("dest", dest);
+    cancelled = false;
+    $("choose").disabled = true; $("status").hidden = false; $("log").textContent = "";
+    $("title").textContent = "Uploading";
+    const totalBytes = files.reduce((a, f) => a + f.size, 0);
+    let doneBytes = 0, done = 0, failed = 0;
+    const render = () => {
+      const pct = totalBytes ? Math.round((doneBytes / totalBytes) * 100) : 100;
+      $("fill").style.width = pct + "%";
+      $("line").textContent = `${pct}% · ${done} of ${files.length} files done` + (failed ? ` · ${failed} failed` : "");
+    };
+    render();
+    for (const f of files) {
+      if (cancelled) break;
+      try {
+        const status = await uploadOne(f, dest, (n) => { doneBytes += n; render(); });
+        done++; log(`${f.name}: ${status}`, "ok");
+      } catch (e) {
+        if (e.message === "cancelled") break;
+        failed++; log(`${f.name}: ${e.message}`, "err");
+        if (/token/i.test(e.message)) { $("title").textContent = "Pairing token missing or wrong"; break; }
+      }
+      render();
+    }
+    $("title").textContent = cancelled ? "Cancelled" : failed ? "Finished with errors" : "All done";
+    $("choose").disabled = false; $("pick").value = "";
+    render();
+  };
+</script>
+</body>
+</html>

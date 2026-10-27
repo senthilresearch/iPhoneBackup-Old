@@ -1,0 +1,54 @@
+name: iphonebackup
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.backend
+    ports:
+      - "8765:8765"   # API, for direct clients (e.g. a native iPhone app)
+    volumes:
+      - ../config:/config
+      - ${LIBRARY_DIR:-C:/Senthil Krishna/iPhoneLibrary}:/library   # the actual photos/videos/files: a Windows folder
+      - iphone-data:/data   # metadata only: SQLite catalogs and thumbnail caches (a Docker volume)
+    environment:
+      IPHONE_DATA: /data
+      SETTINGS_FILE: /config/settings.json   # workspace config/settings.json (gitignored): the pairing token
+      TOKEN_IS_ADMIN: "1"          # behind Docker the PC is not loopback; the token holder is the admin
+      PUBLIC_URL: ${PUBLIC_URL:-}   # e.g. http://192.168.1.20:8081 (optional; see README)
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.frontend
+    ports:
+      - "8081:80"     # web UI + /upload.html, proxies /api to the backend
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Optional public HTTPS (upload API only) on https://<PUBLIC_HOST>/ (ports 80/443; override with CADDY_HTTP_PORT / CADDY_HTTPS_PORT). Off unless COMPOSE_PROFILES=public is set in
+  # the PC's .env together with DUCKDNS_TOKEN (see README, "Reach it from anywhere"); otherwise the stack is unchanged.
+  caddy:
+    profiles: ["public"]
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.caddy
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"      # redirects to HTTPS
+      - "${CADDY_HTTPS_PORT:-443}:443"
+    environment:
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:-}
+      PUBLIC_HOST: ${PUBLIC_HOST:-beammedia.duckdns.org}
+      MTLS_SNIPPET: ${MTLS_SNIPPET:-/etc/caddy/no-mtls.conf}   # /etc/caddy/mtls.conf = require client certificates
+    volumes:
+      - ../config/mtls:/mtls:ro   # ca.crt (public) from make_client_cert.sh, only read when MTLS_SNIPPET enables it
+      - caddy-data:/data     # certificates: keep them across rebuilds (Let's Encrypt rate limits)
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  iphone-data:
+  caddy-data:

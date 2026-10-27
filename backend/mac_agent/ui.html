@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iPhone Mac Agent</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --text:#1c1f24; --muted:#6b7280; --line:#e2e5ea; --accent:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111317; --card:#1b1e24; --text:#e8eaed; --muted:#9aa1ad; --line:#2d323b; --accent:#5b8cff; } }
+  :root { color-scheme: light dark; --tile:150px; --c-preview:#0f766e; --c-start:#1d4ed8; --c-delete:#b91c1c; --c-stop:#b45309; --c-quiet:#475569; --c-border:#8b95a5; }
+  @media (prefers-color-scheme: dark) { :root { --c-quiet:#334155; --c-border:#64748b; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { width:100%; padding:20px clamp(16px, 2.5vw, 40px) 40px; display:grid; gap:14px; }
+  h1 { font-size:20px; margin:0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .phone { display:flex; align-items:center; gap:10px; }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--muted); flex:none; }
+  .dot.ok { background:var(--ok); } .dot.wait { background:var(--warn); }
+  .top { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:stretch; }
+  @media (max-width:700px) { .top { grid-template-columns:1fr; } }  /* only a narrow window stacks them */
+  .top > .card { min-width:0; }
+  .card h2 { font-size:14px; margin:0 0 4px; }
+  .card .sub, dialog .sub { color:var(--muted); font-size:13px; margin:0 0 12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--text); padding:20px; width:min(480px, calc(100vw - 32px)); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  dialog h2 { font-size:16px; margin:0 0 6px; }
+  .runbar { display:grid; grid-template-columns:minmax(210px, 260px) minmax(0, 1fr); gap:14px; align-items:start; }
+  .runbar > #progress { min-width:0; }
+  .actionpanel { min-width:0; }
+  .actions.stack { flex-direction:column; align-items:stretch; }
+  .actions.stack button { width:100%; min-width:150px; }
+  @media (max-width:700px) { .runbar { grid-template-columns:1fr; } .actions.stack { flex-direction:row; } .actions.stack button { width:auto; } }
+  .actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  label { display:grid; gap:4px; font-size:13px; color:var(--muted); }
+  input[type=text], input[type=password], input[type=date] { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; }
+  input[type=date] { cursor:pointer; }
+  .inline-msg { margin-top:12px; padding:10px 12px; border:1px solid var(--c-stop); border-left-width:4px; border-radius:8px; background:var(--bg); font-size:13px; line-height:1.4; }
+  .inline-msg.bad { border-color:var(--bad); }
+  .inline-msg p { margin:4px 0 8px; }
+  .im-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .note { margin:10px 0 0; font-size:13px; color:var(--c-stop); line-height:1.4; }
+  .full { grid-column:1 / -1; }
+  .checks { display:flex; flex-wrap:wrap; gap:6px 16px; color:var(--text); font-size:14px; }
+  .checks label { display:flex; align-items:center; gap:6px; color:var(--text); font-size:14px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button { font:inherit; font-weight:600; border:1px solid transparent; border-radius:8px; padding:9px 18px; cursor:pointer; background:var(--c-start); color:#fff; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  button:hover:not(:disabled) { filter:brightness(1.12); }
+  button:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  button.secondary { background:var(--c-quiet); color:#fff; border-color:var(--c-border); }
+  button:disabled { opacity:.45; filter:grayscale(.6); cursor:not-allowed; box-shadow:none; }
+  .bar { height:10px; background:var(--bg); border-radius:6px; overflow:hidden; border:1px solid var(--line); }
+  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .3s; }
+  .bar.thin { height:6px; margin-top:6px; }
+  .stats { display:flex; flex-wrap:wrap; gap:6px 18px; color:var(--muted); font-size:13px; margin-top:8px; }
+  .stats b { color:var(--text); font-weight:600; }
+  .name { font-size:13px; color:var(--muted); margin-top:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .msg { margin-top:10px; }
+  .msg.error { color:var(--bad); } .msg.done { color:var(--ok); }
+  .logbox { margin-top:10px; height:220px; max-height:none; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px 12px; color:var(--text); }
+  pre { margin:0; max-height:220px; overflow:auto; font:12px/1.5 ui-monospace, Menlo, monospace; color:var(--muted); white-space:pre-wrap; }
+  details summary { cursor:pointer; color:var(--muted); font-size:13px; }
+  .fail { color:var(--bad); font-size:13px; margin:4px 0 0; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(var(--tile), 1fr)); gap:10px; margin-top:12px; }
+  .tile { position:relative; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--bg); cursor:pointer; }
+  .tile.off { opacity:.4; }
+  .tile .img { aspect-ratio:1; display:grid; place-items:center; font-size:30px; color:var(--muted); background:var(--bg); }
+  .tile img { width:100%; height:100%; object-fit:cover; display:block; }
+  .tile input { position:absolute; top:6px; left:6px; width:18px; height:18px; }
+  .tile .meta { padding:6px 8px; font-size:12px; color:var(--muted); line-height:1.3; }
+  .tile .meta b { display:block; color:var(--text); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tile .img { position:relative; }
+  .play { position:absolute; right:6px; bottom:6px; font-size:11px; background:rgba(0,0,0,.6); color:#fff; border-radius:999px; padding:1px 7px; }
+  .exts { border-top:1px solid var(--line); margin-top:12px; padding-top:12px; }
+  .exts .checks { margin-top:8px; }
+  .exts .checks label span { color:var(--muted); font-size:12px; }
+  .tile .tag { position:absolute; left:6px; bottom:6px; font-size:11px; background:rgba(0,0,0,.65); color:#fff; border-radius:999px; padding:1px 8px; }
+  .tile .have { position:absolute; top:6px; right:6px; font-size:11px; background:var(--ok); color:#fff; border-radius:999px; padding:1px 8px; }
+  .existbar { display:flex; gap:10px 16px; align-items:center; flex-wrap:wrap; margin-top:12px; padding:8px 12px; border:1px solid var(--ok); border-radius:8px; font-size:13px; }
+  .existbar label { display:flex; flex-direction:row; align-items:center; gap:6px; color:var(--text); }
+  .existbar .grow { flex:1; }
+  button.b-preview { background:var(--c-preview); }
+  button.b-start { background:var(--c-start); }
+  button.b-delete, button.danger-solid { background:var(--c-delete); }
+  button.b-stop { background:var(--c-stop); }
+  dialog.warn h2 { color:var(--bad); }
+  dialog.warn ul { margin:8px 0 12px; padding-left:20px; color:var(--muted); font-size:13px; }
+  .kept { color:var(--muted); font-size:13px; margin:4px 0 0; }
+  .pager { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .pager .grow { flex:1; color:var(--muted); font-size:13px; }
+  button.small { padding:5px 12px; font-size:13px; }
+  .head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .badge { font-size:12px; font-weight:700; letter-spacing:.04em; padding:3px 10px; border-radius:999px; background:var(--bg); border:1px solid var(--line); }
+  .badge.run { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.bad { color:var(--bad); border-color:var(--bad); } .badge.warn { color:var(--warn); border-color:var(--warn); }
+  .steps { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0 4px; }
+  .chip { font-size:12px; padding:2px 10px; border-radius:999px; border:1px solid var(--line); color:var(--muted); }
+  .chip.skipped { color:var(--muted); border-style:dashed; text-decoration:line-through; }
+  .chip.done { color:var(--ok); border-color:var(--ok); } .chip.active { color:#fff; background:var(--accent); border-color:var(--accent); } .chip.fail { color:#fff; background:var(--bad); border-color:var(--bad); }
+  .bar.indeterminate > i { width:35% !important; animation:slide 1.2s ease-in-out infinite alternate; }
+  @keyframes slide { from { margin-left:0; } to { margin-left:65%; } }
+  .big { display:flex; align-items:baseline; gap:12px; margin:12px 0 6px; }
+  .big .pct { font-size:30px; font-weight:700; }
+  .big .of { color:var(--muted); }
+  .counts { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:8px; margin-top:12px; }
+  .counts div { border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; color:var(--muted); }
+  .counts b { display:block; font-size:18px; color:var(--text); }
+  .counts .bad b { color:var(--bad); }
+  button.busy::before { content:""; display:inline-block; width:11px; height:11px; margin-right:8px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; vertical-align:-1px; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>iPhone Mac Agent</h1>
+
+  <section class="card phone">
+    <span class="dot" id="dot"></span>
+    <div><strong id="phoneName">Checking the phone...</strong><div id="phoneHint" style="color:var(--muted);font-size:13px"></div></div>
+  </section>
+
+  <div class="top">
+    <section class="card">
+      <h2>Server connection</h2>
+      <p class="sub">The PC running the backend. Needed to copy; not needed to preview.</p>
+      <div class="grid">
+        <label class="full">Pairing link (paste it from the web UI's “Connect from iPhone” to fill in the two fields below)<input type="text" id="link" placeholder="http://192.168.0.115:8081/upload.html?token=..." autocomplete="off"></label>
+        <label class="full">Server<input type="text" id="server" placeholder="http://192.168.0.115:8765" autocomplete="off"></label>
+        <label class="full">Pairing token<input type="password" id="token" autocomplete="new-password"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Filters</h2>
+      <p class="sub">What to look for on the phone.</p>
+      <div class="grid">
+        <label>From (modified on or after)<input type="date" id="since"></label>
+        <label>To (modified on or before)<input type="date" id="until"></label>
+        <div class="full checks">
+          <label><input type="checkbox" id="k-photos" checked> Photos</label>
+          <label><input type="checkbox" id="k-videos" checked> Videos</label>
+          <label><input type="checkbox" id="k-files"> Files</label>
+          <label title="Upload again and replace the copies already stored"><input type="checkbox" id="force"> Replace existing copies</label>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="delDlg" class="warn">
+    <form id="delForm" onsubmit="return false">
+      <h2>Delete from the iPhone</h2>
+      <p id="delSummary" class="sub"></p>
+      <ul>
+        <li><b>Favourites are never deleted</b> (nor their Live Photo videos, edit data or edited versions). They are read from the phone's Photos database first; if that can't be read, nothing is deleted.</li>
+        <li id="delVerifyLi">Each file is checked just before it is deleted: the server must have it, with the same size and checksum. Anything that fails the check is kept.</li>
+        <li><b>This cannot be undone.</b> The only copy left is the one on the server.</li>
+        <li>Deleting this way goes around the Photos app, so Photos may show blank placeholders or the phone may refuse some files. Try a few files first.</li>
+      </ul>
+      <p id="delSkipWarn" class="sub" style="color:var(--bad); font-weight:600" hidden>The server check is skipped: these files are NOT verified to be backed up anywhere. If a file is not on the server, deleting it loses it for good.</p>
+      <label><span id="delWord">Type DELETE to confirm</span>
+        <input type="text" id="delConfirm" autocomplete="off" placeholder="DELETE">
+      </label>
+      <div class="actions" style="margin-top:14px; justify-content:flex-end">
+        <button type="button" class="secondary" id="delCancel">Cancel</button>
+        <button type="button" class="danger-solid" id="delGo" disabled>Delete from phone</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="copyDlg">
+    <form id="copyForm" onsubmit="return false">
+      <h2>Copy to the server</h2>
+      <p id="copySummary" class="sub"></p>
+      <label>Destination folder (optional)
+        <input type="text" id="dest" placeholder="Leave empty for year / month name, e.g. 2026/October" autocomplete="off">
+      </label>
+      <div class="checks" id="alsoNewRow" hidden>
+        <label><input type="checkbox" id="alsoNew" checked> <span id="alsoNewText"></span></label>
+      </div>
+      <p class="sub" id="copyWarn" style="color:var(--warn)" hidden>“Replace existing copies” is on: files already on the server will be replaced.</p>
+      <div class="actions" style="margin-top:14px; justify-content:flex-end">
+        <button type="button" class="secondary" id="dlgCancel">Cancel</button>
+        <button type="button" id="dlgGo">Copy now</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="runbar">
+    <section class="card actionpanel">
+      <h2>Actions</h2>
+      <p class="sub">Preview first, then copy.</p>
+      <div class="actions stack">
+        <button id="preview" class="b-preview" title="Read the phone and list the files that match the filters">Preview files</button>
+        <button id="start" class="b-start" title="Copy the selected files to the server">Start copy</button>
+        <button id="delete" class="b-delete" title="Delete the selected files from the iPhone, after checking each one on the server">Delete from phone…</button>
+        <button id="stop" class="b-stop" hidden>Stop</button>
+      </div>
+      <div class="inline-msg" id="inlineMsg" role="alert" hidden>
+        <b id="imTitle"></b>
+        <p id="imText"></p>
+        <div class="im-actions"><button type="button" class="secondary small" id="imCancel">Close</button><button type="button" class="small" id="imGo" hidden></button></div>
+      </div>
+      <p class="note" id="actionNote" hidden></p>
+    </section>
+  <section class="card" id="progress" hidden>
+    <div class="head"><span class="badge" id="badge"></span><strong id="headline"></strong></div>
+    <div class="steps" id="steps"></div>
+    <div id="copyHead" hidden>
+      <div class="big"><span class="pct" id="pct">0%</span><span class="of" id="of"></span></div>
+    </div>
+    <div class="bar" id="overallBar"><i id="overall"></i></div>
+    <div class="msg" id="msg"></div>
+    <div class="counts" id="counts" hidden>
+      <div><b id="cTotal">0</b>Total chosen</div>
+      <div><b id="cDone">0</b>Completed</div>
+      <div><b id="cNow">0</b>In progress</div>
+      <div><b id="cLeft">0</b>Remaining</div>
+      <div><b id="up">0</b>Uploaded</div>
+      <div><b id="dup">0</b>Duplicates</div>
+      <div><b id="skip">0</b>Already there</div>
+      <div class="bad"><b id="fail">0</b>Failed</div>
+    </div>
+    <div class="counts" id="delCounts" hidden>
+      <div><b id="dTotal">0</b>Total chosen</div>
+      <div><b id="dDone">0</b>Checked</div>
+      <div><b id="dDel">0</b>Deleted</div>
+      <div><b id="dKept">0</b>Kept (not deleted)</div>
+      <div class="bad"><b id="dFail">0</b>Failed</div>
+      <div><b id="dFreed">0 MB</b>Freed</div>
+    </div>
+    <div id="copyDetail" hidden>
+      <div class="name" id="current"></div>
+      <div class="bar thin"><i id="filebar"></i></div>
+      <div class="stats">
+        <span><b id="sent">0 MB</b> of <b id="totalmb">0 MB</b></span>
+        <span><b id="speed">0</b> MB/s</span><span>ETA <b id="eta">-</b></span>
+      </div>
+    </div>
+    <div class="actions" id="replaceBar" style="margin-top:12px" hidden>
+      <button class="secondary" id="replaceSkipped"></button>
+    </div>
+    <div id="failures"></div>
+  </section>
+  </div>
+
+  <section class="card">
+    <div class="pager"><h2 style="margin:0">Activity log</h2><span class="grow">Also printed in the terminal this screen was started from.</span></div>
+    <pre id="log" class="logbox">Ready.</pre>
+  </section>
+
+  <section class="card" id="previewCard" hidden>
+    <div class="pager">
+      <strong id="pvCount"></strong>
+      <span class="grow" id="pvScan"></span>
+      <button class="secondary small" id="selAll">Select all</button>
+      <button class="secondary small" id="selNone">Select none</button>
+      <button class="secondary small" id="rescan" title="Read the phone again">Rescan</button>
+    </div>
+    <div class="existbar" id="existBar" hidden>
+      <span class="grow" id="existNote"></span>
+      <label><input type="checkbox" id="hideExist"> Hide them</label>
+      <button class="secondary small" id="replaceExist" title="Re-send these and replace the copies on the server (you can also copy the new files in the same run)">Replace them…</button>
+    </div>
+    <div class="exts" id="exts" hidden>
+      <div class="pager">
+        <strong>File types</strong><span class="grow" id="extNote"></span>
+        <button class="secondary small" id="extAll">All types</button>
+        <button class="secondary small" id="extNone">No types</button>
+      </div>
+      <div class="checks" id="extList"></div>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="pager" style="margin-top:12px">
+      <button class="secondary small" id="prev">Previous</button>
+      <span class="grow" id="pageInfo" style="text-align:center"></span>
+      <button class="secondary small" id="next">Next</button>
+    </div>
+  </section>
+
+
+</main>
+<script>
+const KEY = "__UI_KEY__";
+const $ = (id) => document.getElementById(id);
+const call = async (path, body) => {
+  const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "X-UI-Key": KEY, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+};
+const mb = (n) => (n / 1e6).toFixed(n > 1e9 ? 0 : 1) + " MB";
+const dur = (s) => s == null ? "-" : s > 3600 ? `${Math.floor(s / 3600)}h ${Math.round(s % 3600 / 60)}m` : s > 60 ? `${Math.round(s / 60)}m` : `${Math.round(s)}s`;
+
+// A click anywhere on a date field opens the calendar (Chrome only opens it from the small icon).
+for (const id of ["since", "until"]) $(id).addEventListener("click", () => { try { $(id).showPicker(); } catch {} });
+
+(async () => {
+  const c = await call("/api/config").catch(() => ({}));
+  $("server").value = c.server || ""; $("token").value = c.token || ""; $("dest").value = c.dest || ""; $("since").value = c.since || ""; $("until").value = c.until || "";
+  if (c.kinds) for (const k of ["photos", "videos", "files"]) $("k-" + k).checked = c.kinds.includes(k);
+})();
+
+// Selection in the preview: "all minus toggled" or "none plus toggled", so 10,000 files need no 10,000-entry set.
+const sel = { mode: "all", toggled: new Set(), total: 0, offset: 0, size: 48 };
+const isOn = (p) => sel.mode === "all" ? !sel.toggled.has(p) : sel.toggled.has(p);
+const selectedCount = () => sel.mode === "all" ? sel.total - sel.toggled.size : sel.toggled.size;
+let wantPreview = false;
+
+$("link").oninput = async () => {
+  const v = $("link").value.trim(); if (!v) return;
+  try {
+    const r = await call("/api/pair?link=" + encodeURIComponent(v));
+    $("server").value = r.server; $("token").value = r.token; $("link").value = "";
+    $("link").placeholder = "Filled in from the pairing link ✓";
+  } catch (e) { $("link").placeholder = e.message; }
+};
+$("server").onchange = async () => {  // a backend running on this Mac hands out its token by itself
+  if ($("token").value.trim() || !$("server").value.trim()) return;
+  const r = await call("/api/discover?server=" + encodeURIComponent($("server").value.trim())).catch(() => ({}));
+  if (r.token) $("token").value = r.token;
+};
+
+// File types found by the last preview: [{ext, count, bytes}]. Ticks are remembered across previews.
+let extList = [], existCount = 0, skippedCount = 0;
+const extOn = new Map();
+const enabledExts = () => extList.filter((e) => extOn.get(e.ext) !== false).map((e) => e.ext);
+const extsPartial = () => extList.length > 0 && enabledExts().length !== extList.length;
+const extQuery = () => (extsPartial() ? `&exts=${encodeURIComponent(enabledExts().join(","))}` : "") + ($("hideExist").checked ? "&hide_existing=true" : "");
+
+function renderExts() {
+  $("exts").hidden = extList.length === 0;
+  const box = $("extList"); box.innerHTML = "";
+  for (const e of extList) {
+    const l = document.createElement("label"), cb = document.createElement("input"), n = document.createElement("span");
+    cb.type = "checkbox"; cb.checked = extOn.get(e.ext) !== false;
+    cb.onchange = () => { extOn.set(e.ext, cb.checked); extsChanged(); };
+    n.textContent = `(${e.count.toLocaleString()})`; l.title = `${e.count.toLocaleString()} files, ${mb(e.bytes)}`;
+    l.append(cb, e.ext.toUpperCase(), n); box.append(l);
+  }
+  $("extNote").textContent = extsPartial() ? `${enabledExts().length} of ${extList.length} types selected` : "";
+}
+function setExisting(s) {
+  existCount = s.existing_checked ? s.existing_count : 0;
+  $("existBar").hidden = existCount === 0;
+  $("existNote").textContent = `${existCount.toLocaleString()} of these ${s.matched.toLocaleString()} files are already on the server. Copying skips them.`;
+  if (existCount === 0) $("hideExist").checked = false;
+}
+function extsChanged() {  // a different set of files: start the per-file choices afresh
+  sel.mode = "all"; sel.toggled.clear(); sel.offset = 0; renderExts(); loadPage();
+}
+$("extAll").onclick = () => { extList.forEach((e) => extOn.set(e.ext, true)); extsChanged(); };
+$("extNone").onclick = () => { extList.forEach((e) => extOn.set(e.ext, false)); extsChanged(); };
+
+const params = (extra = {}) => ({
+  server: $("server").value.trim(), token: $("token").value.trim(), dest: $("dest").value.trim(),
+  kinds: ["photos", "videos", "files"].filter((k) => $("k-" + k).checked),
+  since: $("since").value, until: $("until").value, force: $("force").checked, ...extra,
+});
+const validate = (p) => {
+  if (!p.kinds.length) return "Pick at least one kind.";
+  if (p.since && p.until && p.since > p.until) return "“From” is after “To”.";
+};
+const selection = () => sel.mode === "all" ? { exclude: [...sel.toggled] } : { include: [...sel.toggled] };
+
+// Inline messages in the Actions card (no browser pop-ups). say() informs; ask() also offers a choice and resolves true/false.
+let imResolve = null;
+function hideMsg() { $("inlineMsg").hidden = true; if (imResolve) { const r = imResolve; imResolve = null; r(false); } }
+function say(text, title = "", kind = "") {
+  hideMsg();
+  $("imTitle").textContent = title; $("imTitle").hidden = !title; $("imText").textContent = text;
+  $("imGo").hidden = true; $("imCancel").textContent = "Close";
+  $("inlineMsg").className = "inline-msg " + kind; $("inlineMsg").hidden = false;
+  $("inlineMsg").scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+function ask({ title, text, go, cancel = "Cancel" }) {
+  return new Promise((resolve) => {
+    say(text, title); imResolve = resolve;
+    $("imGo").textContent = go; $("imGo").hidden = false; $("imCancel").textContent = cancel;
+  });
+}
+$("imCancel").onclick = hideMsg;
+$("imGo").onclick = () => { const r = imResolve; imResolve = null; $("inlineMsg").hidden = true; if (r) r(true); };
+
+$("preview").onclick = async (rescan = false) => {
+  const p = params({ rescan: rescan === true });
+  const bad = validate(p); if (bad) return say(bad);
+  wantPreview = true;
+  try { await call("/api/preview", p); } catch (e) { say(e.message, "Could not start", "bad"); }
+};
+$("rescan").onclick = () => $("preview").onclick(true);
+
+function startPayload() {
+  return params({ ...selection(), ...(!$("previewCard").hidden && extsPartial() ? { exts: enabledExts() } : {}) });
+}
+let pending = null;  // what the copy prompt will do when confirmed
+function openCopy(summary, warn, send, opts = {}) {
+  pending = send;
+  $("copySummary").textContent = summary; $("copyWarn").hidden = !warn;
+  $("alsoNewRow").hidden = !opts.alsoNew;  // only the "Replace them…" prompt offers it
+  if (opts.alsoNew) { $("alsoNew").checked = true; $("alsoNewText").textContent = `Also copy the ${opts.alsoNew.toLocaleString()} ${opts.alsoNew === 1 ? "file" : "files"} that ${opts.alsoNew === 1 ? "is" : "are"} not on the server yet`; }
+  openDlg(); $("dest").focus();
+}
+function readyToCopy() {  // shared checks; returns the payload or null
+  const p = startPayload();
+  const bad = validate(p); if (bad) { say(bad); return null; }
+  if (!p.server) { say("Enter the server address, or paste the pairing link in the box above it."); $("server").focus(); return null; }
+  if (!p.token) { say("Enter the pairing token, or paste the pairing link."); $("token").focus(); return null; }
+  if (!$("previewCard").hidden && selectedCount() === 0) { say("No files are selected."); return null; }
+  return p;
+}
+$("start").onclick = () => {  // check first, then ask where to put the files
+  const p = readyToCopy(); if (!p) return;
+  const previewed = !$("previewCard").hidden;
+  openCopy(previewed
+    ? `${selectedCount().toLocaleString()} selected files will be copied to ${p.server}.`
+    : `Every file matching the filters will be copied to ${p.server}. (Use “Preview files” first to choose files.)`,
+    p.force, () => call("/api/start", startPayload()));
+};
+$("replaceExist").onclick = async () => {
+  if (!readyToCopy()) return;
+  let fresh = 0;  // selected-type files the server does NOT have yet, so the prompt can offer to copy them too
+  try { fresh = (await call(`/api/files?limit=1&hide_existing=true${extsPartial() ? `&exts=${encodeURIComponent(enabledExts().join(","))}` : ""}`)).total; } catch {}
+  openCopy(`The ${existCount.toLocaleString()} ${existCount === 1 ? "file" : "files"} the server already has will be sent again and replace its copies.`,
+    true,
+    () => call("/api/start", { ...startPayload(), force: true, only_existing: !($("alsoNewRow").hidden === false && $("alsoNew").checked) }),
+    { alsoNew: fresh });
+};
+$("replaceSkipped").onclick = () => {
+  openCopy(`The ${skippedCount.toLocaleString()} files skipped just now (the server already had them) will be sent again and replace its copies.`,
+    true, () => call("/api/replace_skipped", { dest: $("dest").value.trim() }));
+};
+$("hideExist").onchange = () => extsChanged();
+
+// Delete from the phone: only what the preview shows and ticks, typed confirmation, verified file by file.
+let skipVerify = false, delWord = "DELETE";
+$("delete").onclick = async () => {
+  if ($("previewCard").hidden) return say("Run “Preview files” first, so you can see exactly what will be deleted.");
+  await refreshServer();
+  skipVerify = false;
+  if (!serverOk) {
+    skipVerify = await ask({
+      title: "Server not reachable", go: "Skip the check and continue", cancel: "Cancel",
+      text: `${serverWhy.replace(/ \(\w+\)/, "")} Delete normally checks each file against the server first. Skip the check? Files not already on the server would be lost for good. Favourites are still kept.`,
+    });
+    if (!skipVerify) return;
+  }
+  const p = skipVerify ? null : readyToCopy(); if (!skipVerify && !p) return;
+  delWord = skipVerify ? "DELETE UNVERIFIED" : "DELETE";
+  $("delSummary").textContent = skipVerify
+    ? `${selectedCount().toLocaleString()} selected files will be deleted from the iPhone WITHOUT being checked against the server.`
+    : `${selectedCount().toLocaleString()} selected files will be deleted from the iPhone, but only those verified on ${p.server}.`;
+  $("delSkipWarn").hidden = !skipVerify; $("delVerifyLi").hidden = skipVerify;
+  $("delWord").textContent = `Type ${delWord} to confirm`; $("delConfirm").placeholder = delWord;
+  $("delConfirm").value = ""; $("delGo").disabled = true;
+  delDlg.showModal ? delDlg.showModal() : delDlg.setAttribute("open", ""); $("delConfirm").focus();
+};
+const delDlg = $("delDlg");
+const closeDel = () => { delDlg.close ? delDlg.close() : delDlg.removeAttribute("open"); };
+$("delConfirm").oninput = applyEnabled;
+$("delCancel").onclick = closeDel;
+$("delForm").onsubmit = (e) => e.preventDefault();
+$("delGo").onclick = async () => {
+  if ($("delConfirm").value !== delWord) return;
+  closeDel(); wantPreview = false; handledDelete = false;
+  try { await call("/api/delete", { ...startPayload(), confirm: delWord, skip_verify: skipVerify }); } catch (e) { say(e.message, "Could not start", "bad"); }
+};
+let handledDelete = true;
+const dlg = $("copyDlg");
+const openDlg = () => { dlg.showModal ? dlg.showModal() : dlg.setAttribute("open", ""); };
+const closeDlg = () => { dlg.close ? dlg.close() : dlg.removeAttribute("open"); };
+async function confirmCopy() {
+  const send = pending; pending = null; closeDlg(); wantPreview = false;
+  if (!send) return;
+  try { await send(); } catch (e) { say(e.message, "Could not start", "bad"); }
+}
+$("dlgCancel").onclick = closeDlg;
+$("dlgGo").onclick = confirmCopy;
+$("copyForm").onsubmit = (e) => { e.preventDefault(); confirmCopy(); };  // Enter in the folder box
+$("stop").onclick = () => call("/api/stop", {});
+
+$("selAll").onclick = () => { sel.mode = "all"; sel.toggled.clear(); renderTiles(); };
+$("selNone").onclick = () => { sel.mode = "none"; sel.toggled.clear(); renderTiles(); };
+$("prev").onclick = () => { sel.offset = Math.max(0, sel.offset - sel.size); loadPage(); };
+$("next").onclick = () => { if (sel.offset + sel.size < sel.total) { sel.offset += sel.size; loadPage(); } };
+
+const ICON = { photos: "🖼️", videos: "🎞️", files: "📄" };
+const iconFor = (f) => f.name.toLowerCase().endsWith(".aae") ? "📝" : ICON[f.kind];  // edit data: not a picture
+let page = [];
+// Whole rows of tiles for the current window width (also used as the page size).
+function fitPageSize() {
+  const w = $("tiles").clientWidth || $("previewCard").clientWidth || 900, tile = 150, gap = 10;
+  const cols = Math.max(1, Math.floor((w + gap) / (tile + gap)));
+  sel.size = cols * 5;
+  sel.offset = Math.floor(sel.offset / sel.size) * sel.size;
+}
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (!$("previewCard").hidden) loadPage(); }, 250);
+});
+async function loadPage() {
+  $("previewCard").hidden = false;
+  fitPageSize();
+  const r = await call(`/api/files?offset=${sel.offset}&limit=${sel.size}${extQuery()}`);
+  sel.total = r.total; page = r.items; renderTiles();
+}
+function renderTiles() {
+  $("previewCard").hidden = false;
+  $("pvCount").textContent = `${sel.total.toLocaleString()} files · ${selectedCount().toLocaleString()} selected`;
+  $("pageInfo").textContent = sel.total ? `${sel.offset + 1}–${Math.min(sel.offset + sel.size, sel.total)} of ${sel.total.toLocaleString()}` : "No files match these filters.";
+  $("prev").disabled = sel.offset === 0; $("next").disabled = sel.offset + sel.size >= sel.total;
+  const box = $("tiles"); box.innerHTML = "";
+  for (const f of page) {
+    const t = document.createElement("div"); t.className = "tile" + (isOn(f.path) ? "" : " off");
+    const img = document.createElement("div"); img.className = "img";
+    if (f.kind === "photos" || f.kind === "videos") {
+      const i = document.createElement("img"); i.loading = "lazy";
+      i.src = `/api/thumb?k=${KEY}&path=${encodeURIComponent(f.path)}`;
+      i.onerror = () => { i.remove(); const ic = document.createElement("span"); ic.textContent = iconFor(f); img.prepend(ic); };  // keep the badges
+      img.append(i);
+      if (f.kind === "videos") { const b = document.createElement("span"); b.className = "play"; b.textContent = "▶"; img.append(b); }
+    } else img.textContent = iconFor(f);
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = isOn(f.path);
+    const flip = () => { sel.toggled.has(f.path) ? sel.toggled.delete(f.path) : sel.toggled.add(f.path); renderTiles(); };
+    cb.onclick = (e) => { e.stopPropagation(); flip(); }; t.onclick = flip;
+    const meta = document.createElement("div"); meta.className = "meta";
+    const nm = document.createElement("b"); nm.textContent = f.name; nm.title = f.path;
+    meta.append(nm, `${new Date(f.mtime).toLocaleDateString()} · ${mb(f.size)}`);
+    if (f.name.toLowerCase().endsWith(".aae")) { const g = document.createElement("span"); g.className = "tag"; g.textContent = "edit data"; g.title = "Edits made to the photo with the same name (crop, filters). Not a picture."; img.append(g); }
+    if (f.exists) { const h = document.createElement("span"); h.className = "have"; h.textContent = "✓ on server"; h.title = "The server already has this file"; img.append(h); }
+    t.append(img, cb, meta); box.append(t);
+  }
+}
+
+// Everything that reads or changes the phone is off while no iPhone is connected (or a job is running).
+let phoneOk = false, jobActive = false;
+const NEEDS_PHONE = ["preview", "start", "delete", "rescan", "replaceExist", "replaceSkipped", "dlgGo"];
+// Copying and replacing send files to the server, so they are off while it can't be reached. Preview and Delete stay on
+// (Delete still verifies every file against the server and keeps anything it can't verify).
+const NEEDS_SERVER = ["start", "replaceExist", "replaceSkipped", "dlgGo"];
+let serverOk = false, serverWhy = "Checking the server...";
+const DELETE_TIP = "Delete the selected files from the iPhone, after checking each one on the server";
+const NO_PHONE_TIP = "Plug in the iPhone with a cable first (unlocked and trusted)";
+function applyEnabled() {
+  for (const id of NEEDS_PHONE) {
+    const b = $(id); if (!b) continue;
+    const noServer = NEEDS_SERVER.includes(id) && !serverOk;
+    b.disabled = jobActive || !phoneOk || noServer;
+    if (id === "delete") {  // always available: without the server it asks whether to skip the verification
+      b.disabled = jobActive || !phoneOk;
+      b.title = !phoneOk ? NO_PHONE_TIP : DELETE_TIP;
+      continue;
+    }
+    if (!phoneOk || noServer) { if (b.dataset.tip === undefined) b.dataset.tip = b.title; b.title = !phoneOk ? NO_PHONE_TIP : serverWhy; }
+    else if (b.dataset.tip !== undefined) { b.title = b.dataset.tip; delete b.dataset.tip; }
+  }
+  $("delGo").disabled = !phoneOk || jobActive || $("delConfirm").value !== delWord;
+  const note = $("actionNote");
+  note.hidden = serverOk;
+  note.textContent = serverOk ? "" : `${serverWhy.replace(/ \(\w+\)/, "")} Copy is off.`;
+  note.title = serverOk ? "" : `${serverWhy} Preview still works. Delete asks whether to skip the server check.`;
+}
+
+let serverTimer = null;
+async function refreshServer() {
+  if (jobActive) return;  // a running job is using the server; keep the last answer
+  try {
+    const r = await call(`/api/server?server=${encodeURIComponent($("server").value.trim())}&token=${encodeURIComponent($("token").value.trim())}`);
+    serverOk = r.ok; serverWhy = r.reason;
+  } catch { serverOk = false; serverWhy = "Agent not reachable."; }
+  applyEnabled();
+}
+for (const id of ["server", "token"]) $(id).addEventListener("input", () => { serverOk = false; serverWhy = "Checking the server..."; applyEnabled(); clearTimeout(serverTimer); serverTimer = setTimeout(refreshServer, 600); });
+
+async function refreshPhone() {
+  try {
+    const p = await call("/api/phone");
+    phoneOk = !!p.connected; applyEnabled();
+    $("dot").className = "dot " + (p.connected ? "ok" : "wait");
+    $("phoneName").textContent = p.busy ? "Transferring..." : p.connected ? `${p.name} · iOS ${p.ios} · ${p.transport === "wifi" ? "Wi-Fi" : "USB"}` : "No iPhone";
+    $("phoneHint").textContent = p.connected ? "" : p.hint || p.reason || "";
+  } catch { phoneOk = false; applyEnabled(); $("phoneName").textContent = "Agent not reachable"; }
+}
+
+const OPS = { preview: "PREVIEW", copy: "COPY", delete: "DELETE" };
+const BADGES = {
+  starting: ["run", "RUNNING"], deleting: ["run", "RUNNING"], checking: ["run", "RUNNING"], scanning: ["run", "RUNNING"], uploading: ["run", "RUNNING"],
+  previewed: ["ok", "COMPLETE"], done: ["ok", "COMPLETE"], stopped: ["warn", "STOPPED"], error: ["bad", "FAILED"],
+};
+const HEADLINES = {
+  preview: { starting: "Checking the phone", scanning: "Reading the phone", checking: "Checking what the server already has", previewed: "Preview finished" },
+  delete: { starting: "Getting ready to delete", scanning: "Reading the phone", favorites: "Reading your Favourites (kept safe)", deleting: "Verifying each file, then deleting it", done: "Delete finished" },
+  copy: { starting: "Getting ready to copy", scanning: "Reading the phone before copying", uploading: "Copying files to the server", done: "Copy finished" },
+};
+
+async function refreshState() {
+  let s;
+  try { s = await call("/api/state"); } catch { return; }
+  const active = s.running, copy = s.op === "copy", del = s.op === "delete";
+  if (del && !active && !handledDelete && ["done", "stopped"].includes(s.phase)) {  // the list shrank: show it
+    handledDelete = true; extList = s.extensions || []; renderExts(); setExisting(s);
+    sel.mode = "all"; sel.toggled.clear(); sel.offset = 0; loadPage();
+  }
+  if (s.phase === "previewed" && wantPreview) { wantPreview = false; sel.mode = "all"; sel.toggled.clear(); sel.offset = 0; extList = s.extensions || []; renderExts(); setExisting(s); loadPage(); }
+  $("pvScan").textContent = s.scanned_at ? `phone read at ${new Date(s.scanned_at * 1000).toLocaleTimeString()}` : "";
+
+  // Buttons say what is running.
+  jobActive = active; applyEnabled(); $("stop").hidden = !active;
+  $("delete").textContent = active && del ? "Deleting..." : "Delete from phone…"; $("delete").classList.toggle("busy", active && del);
+  $("preview").textContent = active && !copy ? "Previewing..." : "Preview files";
+  $("start").textContent = active && copy ? "Copying..." : "Start copy";
+  $("preview").classList.toggle("busy", active && !copy); $("start").classList.toggle("busy", active && copy);
+
+  skippedCount = s.skipped_available || 0;
+  $("replaceBar").hidden = !(copy && !active && skippedCount > 0 && ["done", "stopped"].includes(s.phase));
+  $("replaceSkipped").textContent = `Replace the ${skippedCount.toLocaleString()} existing copies`;
+  const log = $("log"); const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.textContent = s.log.length ? s.log.join("\n") : "Ready."; if (atEnd) log.scrollTop = log.scrollHeight;
+  $("progress").hidden = s.phase === "idle";
+  if (s.phase === "idle") return;
+
+  const [cls, word] = BADGES[s.phase] || ["", ""];
+  $("badge").textContent = `${OPS[s.op] || ""} ${word}`; $("badge").className = "badge " + cls;
+  $("headline").textContent = (HEADLINES[s.op] || {})[s.phase] || "";
+
+  $("steps").innerHTML = "";
+  s.steps.forEach((name, i) => {
+    const c = document.createElement("span");
+    const failed = s.phase === "error" && i === s.step;
+    const skipped = (s.skipped_steps || []).includes(i);
+    c.className = "chip " + (skipped ? "skipped" : failed ? "fail" : i < s.step ? "done" : i === s.step && active ? "active" : "");
+    c.textContent = skipped ? `– ${name} (skipped)` : (i < s.step ? "✓ " : "") + name;
+    if (skipped) c.title = "The server could not be reached, so this step was not run";
+    $("steps").append(c);
+  });
+
+  const done = del ? s.deleted + s.kept + s.failed : s.uploaded + s.duplicates + s.skipped + s.failed;
+  const now = active && ["uploading", "deleting"].includes(s.phase) && done < s.total ? 1 : 0;
+  const working = (copy || del) && s.total > 0 && ["uploading", "deleting", "done", "stopped", "error"].includes(s.phase);
+  const copying = copy && working;
+  $("copyHead").hidden = !working; $("counts").hidden = $("copyDetail").hidden = !copying; $("delCounts").hidden = !(del && working);
+
+  const bar = $("overallBar");
+  if (working) {
+    const pct = s.total ? done / s.total * 100 : 0;
+    bar.classList.remove("indeterminate"); $("overall").style.width = Math.min(100, pct) + "%";
+    $("pct").textContent = Math.floor(pct) + "%";
+    $("of").textContent = `${done.toLocaleString()} of ${s.total.toLocaleString()} files`;
+    if (del) {
+      $("dTotal").textContent = s.total.toLocaleString(); $("dDone").textContent = done.toLocaleString();
+      $("dDel").textContent = s.deleted; $("dKept").textContent = s.kept; $("dFail").textContent = s.failed; $("dFreed").textContent = mb(s.bytes_freed);
+    }
+    $("cTotal").textContent = s.total.toLocaleString(); $("cDone").textContent = done.toLocaleString();
+    $("cNow").textContent = now; $("cLeft").textContent = Math.max(0, s.total - done - now).toLocaleString();
+    $("up").textContent = s.uploaded; $("dup").textContent = s.duplicates; $("skip").textContent = s.skipped; $("fail").textContent = s.failed;
+    $("current").textContent = active && s.name ? `Now: ${s.name}` : "";
+    $("filebar").style.width = (s.file_size ? s.file_bytes / s.file_size * 100 : 0) + "%";
+    $("sent").textContent = mb(s.bytes_sent); $("totalmb").textContent = mb(s.total_bytes);
+    $("speed").textContent = (s.speed / 1e6).toFixed(1); $("eta").textContent = dur(s.eta);
+  } else if (active) {
+    bar.classList.add("indeterminate"); $("overall").style.width = "";  // busy, no total yet
+  } else {
+    bar.classList.remove("indeterminate"); $("overall").style.width = s.phase === "previewed" ? "100%" : "0";
+  }
+
+  let msg = s.message;
+  if (active && s.phase === "scanning") msg = `${s.message} ${s.scan_count.toLocaleString()} files found so far.`;
+  const m = $("msg"); m.textContent = msg; m.className = "msg " + (s.phase === "error" ? "error" : ["done", "previewed"].includes(s.phase) ? "done" : "");
+  $("failures").innerHTML = ""; for (const [p, why] of s.failures || []) { const d = document.createElement("div"); d.className = "fail"; d.textContent = `${p}: ${why}`; $("failures").append(d); }
+  for (const [p, why] of del ? s.kept_items || [] : []) { const d = document.createElement("div"); d.className = "kept"; d.textContent = `kept ${p}: ${why}`; $("failures").append(d); }
+}
+refreshPhone(); setInterval(refreshPhone, 5000);
+setTimeout(refreshServer, 400); setInterval(refreshServer, 8000);
+refreshState(); setInterval(refreshState, 1000);
+</script>
+</body>
+</html>
